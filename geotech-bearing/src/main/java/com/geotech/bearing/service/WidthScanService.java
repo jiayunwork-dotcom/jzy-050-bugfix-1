@@ -9,6 +9,7 @@ import com.geotech.bearing.profile.SoilProfileService;
 import com.geotech.bearing.validation.InputValidator;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -53,12 +54,14 @@ public class WidthScanService {
 
         List<BearingResult> points = new ArrayList<>();
         int guard = 0;
-        // 用整数步数枚举，避免 0.1 之类步长的浮点漂移导致漏点/多点或宽度出现 3.0000000004。
+        // 用整数步数枚举，避免 0.1 之类步长的浮点漂移导致漏点/多点。
         long steps = Math.round((maxWidthM - minWidthM) / stepM);
+        // 每个宽度按十进制精确计算 min + i·step：1.5 就是 1.5，绝不向整数吸附；
+        // 同时消除 0.1 累加出的 3.0000000000000004 一类浮点噪声。
+        BigDecimal min = BigDecimal.valueOf(minWidthM);
+        BigDecimal step = BigDecimal.valueOf(stepM);
         for (long i = 0; i <= steps && guard < MAX_POINTS; i++, guard++) {
-            double width = minWidthM + i * stepM;
-            // 整数步点吸附回「期望值」（如 1、2、3），消除 3.0000000000000004 一类噪声。
-            width = Math.round(width);
+            double width = min.add(step.multiply(BigDecimal.valueOf(i))).doubleValue();
             if (width > maxWidthM + 1e-9) {
                 break;
             }

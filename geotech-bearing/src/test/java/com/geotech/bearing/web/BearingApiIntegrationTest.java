@@ -242,6 +242,60 @@ class BearingApiIntegrationTest {
     }
 
     @Test
+    @DisplayName("小数步长扫描：1.0→3.0 每 0.5 米一点，宽度精确落点且 qu 严格递增")
+    void fractionalStepScanKeepsExactWidths() throws Exception {
+        Map<String, Object> scanBody = new HashMap<>();
+        scanBody.put("profileName", "medium-dense-sand");
+        scanBody.put("depthM", 1.0);
+        scanBody.put("shape", "STRIP");
+        scanBody.put("minWidthM", 1.0);
+        scanBody.put("maxWidthM", 3.0);
+        scanBody.put("stepM", 0.5);
+
+        ResponseEntity<String> scan =
+                rest.postForEntity(url("/api/bearings/scan"), scanBody, String.class);
+        assertEquals(HttpStatus.OK.value(), scan.getStatusCode().value());
+        JsonNode root = json.readTree(scan.getBody());
+        assertEquals(5, root.get("count").asInt(), "1.0→3.0、步长 0.5 应恰好 5 个点");
+        assertEquals(5, root.get("points").size());
+
+        // 每个点的宽度必须是这一步真正该取的宽度：1.5 就是 1.5，不许吸附到整数
+        double[] expectedWidths = {1.0, 1.5, 2.0, 2.5, 3.0};
+        double prevQu = -1;
+        double prevWidth = -1;
+        for (int i = 0; i < expectedWidths.length; i++) {
+            JsonNode point = root.get("points").get(i);
+            double width = point.get("geometry").get("widthM").asDouble();
+            assertEquals(expectedWidths[i], width, 1e-12,
+                    "第 " + i + " 个点宽度被挪动：期望 " + expectedWidths[i] + " 实际 " + width);
+            if (i > 0) {
+                assertEquals(0.5, width - prevWidth, 1e-12,
+                        "相邻两点宽度间隔必须严格等于步长 0.5");
+            }
+            prevWidth = width;
+
+            // c=0 砂土：qu 必须随宽度严格递增，不许出现两点承载力相同
+            double qu = point.get("terms").get("quKpa").asDouble();
+            assertTrue(qu > prevQu, "qu 应随宽度严格递增：" + prevQu + " -> " + qu);
+            prevQu = qu;
+
+            // 每个点的三因子都要经得起手工核对（φ=30° 文献表值）
+            JsonNode factors = point.get("factors");
+            assertEquals(30.14, factors.get("nc").asDouble(), 0.05);
+            assertEquals(18.40, factors.get("nq").asDouble(), 0.02);
+            assertEquals(22.40, factors.get("ngamma").asDouble(), 0.1);
+        }
+
+        // 手工核对 B=1.5 这一点：c=0、条形，qu = γ·Df·Nq + 0.5·γ·B·Nγ
+        JsonNode middle = root.get("points").get(1);
+        double nq = middle.get("factors").get("nq").asDouble();
+        double ngamma = middle.get("factors").get("ngamma").asDouble();
+        double expectedQu = 19.0 * 1.0 * nq + 0.5 * 19.0 * 1.5 * ngamma;
+        assertEquals(expectedQu, middle.get("terms").get("quKpa").asDouble(), 1e-9,
+                "B=1.5 的 qu 应等于手工核算值");
+    }
+
+    @Test
     @DisplayName("方形形状修正通过 HTTP 生效：三项系数回显且 qu 不同于条形")
     void squareShapeOverHttp() throws Exception {
         Map<String, Object> body = inlineCalcBody(10, 25, 19, 3, 1.5);
