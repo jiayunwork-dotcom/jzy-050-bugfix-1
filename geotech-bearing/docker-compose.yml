@@ -1,0 +1,40 @@
+# 一步构建并把服务与 PostgreSQL 16 一起拉起：
+#   docker compose up --build
+# 对外接口： http://localhost:8080
+services:
+  db:
+    image: postgres:16
+    container_name: geotech-pg16
+    environment:
+      POSTGRES_DB: geotech
+      POSTGRES_USER: geotech
+      POSTGRES_PASSWORD: geotech
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U geotech -d geotech"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: geotech-api
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/geotech
+      SPRING_DATASOURCE_USERNAME: geotech
+      SPRING_DATASOURCE_PASSWORD: geotech
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+volumes:
+  pgdata:

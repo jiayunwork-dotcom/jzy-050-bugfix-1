@@ -1,0 +1,16 @@
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+### IntelliJ / Eclipse / VSCode ###
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+
+### 杂项 ###
+*.log
+.DS_Store
