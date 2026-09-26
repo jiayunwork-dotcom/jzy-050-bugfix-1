@@ -9,6 +9,7 @@ import com.geotech.bearing.profile.SoilProfileService;
 import com.geotech.bearing.validation.InputValidator;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -53,15 +54,20 @@ public class WidthScanService {
 
         List<BearingResult> points = new ArrayList<>();
         int guard = 0;
-        // 用整数步数枚举，避免 0.1 之类步长的浮点漂移导致漏点/多点或宽度出现 3.0000000004。
+        // 用整数步数枚举，避免 0.1 之类步长的浮点漂移导致漏点/多点。
         long steps = Math.round((maxWidthM - minWidthM) / stepM);
+        // 宽度按十进制精确步进：BigDecimal 下 min + i·step 没有二进制浮点噪声，
+        // 每一点都落在本步真正该取的宽度上——1.5 就是 1.5，既不出现
+        // 3.0000000000000004 一类漂移，也绝不向就近整数吸附。
+        BigDecimal min = BigDecimal.valueOf(minWidthM);
+        BigDecimal max = BigDecimal.valueOf(maxWidthM);
+        BigDecimal step = BigDecimal.valueOf(stepM);
         for (long i = 0; i <= steps && guard < MAX_POINTS; i++, guard++) {
-            double width = minWidthM + i * stepM;
-            // 整数步点吸附回「期望值」（如 1、2、3），消除 3.0000000000000004 一类噪声。
-            width = Math.round(width);
-            if (width > maxWidthM + 1e-9) {
+            BigDecimal widthExact = min.add(step.multiply(BigDecimal.valueOf(i)));
+            if (widthExact.compareTo(max) > 0) {
                 break;
             }
+            double width = widthExact.doubleValue();
             FoundationGeometry geometry = new FoundationGeometry(width, depthM, foundationShape);
             points.add(bearingCalculator.calculate(soil, geometry));
         }
